@@ -1,7 +1,7 @@
-import User from "../models/user.model";
-import { errorHandler } from "../utils/error";
+import User from "../models/user.model.js";
+import { errorHandler } from "../utils/error.js";
 
-export const getUsers = async(req, resizeBy, next) => {
+export const getUsers = async(req, res, next) => {
     const userId = req.user.id;
 
     const validUser = await User.findOne({_id: userId})
@@ -10,6 +10,6 @@ export const getUsers = async(req, resizeBy, next) => {
     }
 
     const {password: pass, ...rest} = validUser._doc
-    
+
     res.status(200).json(rest)
 }
