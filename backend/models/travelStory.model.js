@@ -26,6 +26,10 @@ const travelStorySchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    imageFileId: {   // ✅ new field for ImageKit fileId
+        type: String,
+        required: true,
+    },
     visitedDate: {
         type: Date,
         required: true,

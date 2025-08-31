@@ -4,34 +4,67 @@ import {errorHandler} from "../utils/error.js";
 import path from "path";
 import fs from "fs";
 import TravelStory from "../models/travelStory.model.js";
+import imagekit from "../configs/imageKit.js";
 
 export const addTravel = async(req, res, next) => {
-    const {title, story, visitedLocation, imageUrl, visitedDate} = req.body 
+    const {title, story, visitedLocation, visitedDate} = req.body 
 
     const userId = req.user.id
 
     // validate required field 
-    if(!title || !story || !visitedLocation || !imageUrl || !visitedDate){
+    if(!title || !story || !visitedLocation || !visitedDate){
         return next(errorHandler(400, "All fields are required"))
     }
     // convert visited date from miliseconds to date object
     const parsedVisitedDate = new Date(parseInt(visitedDate))
-    try{
+    try {
+        let imageUrl, optimizedImageUrl, fileId;
+
+        if (req.file) {
+        // Step 1: Upload to ImageKit
+        const response = await imagekit.upload({
+            file: req.file.buffer, // if using memoryStorage
+            fileName: req.file.originalname,
+            folder: "/travelImage"
+        });
+
+        // Step 2: Generate optimized URL
+        optimizedImageUrl = imagekit.url({
+            path: response.filePath,
+            transformation: [
+            { width: 1280 },
+            { quality: "auto" },
+            { format: "webp" }
+            ]
+        });
+
+        // Step 3: Assign values
+        imageUrl = response.url;
+        fileId = response.fileId;
+        } else {
+            // fallback if no image uploaded
+            imageUrl = `http://localhost:3000/assets/placeholderImage.png`;
+        }
+
+        // Step 4: Save in DB
         const travelStory = new TravelStory({
             title,
             story,
             visitedLocation,
             userId,
-            imageUrl,
             visitedDate: parsedVisitedDate,
-        })
+            imageUrl,
+            optimizedImageUrl,
+            fileId
+        });
 
         await travelStory.save();
+
         res.status(201).json({
             story: travelStory,
-            Message: "Your story is added successfully",
-        })
-    }catch(error){
+            message: "Your story is added successfully"
+        });
+    } catch (error) {
         next(error);
     }
 }
@@ -54,47 +87,62 @@ export const getAllTravelStory = async(req, res, next) => {
 }
 
 export const imageUpload = async(req, res, next) => {
-
+    const userId = req.user.id
     try{
         if(!req.file){
             return next(errorHandler(400, "No image uploaded"))
         }
+        // upload image to imageKit
+        const imageFile = req.file
+        const fileBuffer = fs.readFileSync(imageFile.path)
+        const response = await imagekit.upload({
+            file: fileBuffer,
+            fileName: imageFile.originalname,
+            folder: `/travelImage/${userId}`
+        })
 
-        const imageUrl = `http://localhost:3000/uploads/${req.file.filename}`;
+        // For URL Generation, works for both images and videos
+        const optimizedImageURL = imagekit.url({
+            path : response.filePath,
+            transformation : [
+                {width: 1280}, // width resizing
+                {quality: 'auto'}, // auto compression
+                {format: 'webp'} // convert to modern format
+            ]
+        });
 
-        res.status(201).json({imageUrl})
+        // Save both fileId and URLs
+        await TravelStory.create({
+            ...req.body,
+            userId,
+            imageUrl: response.url,          // original ImageKit URL
+            optimizedImageUrl: optimizedImageURL, // transformed URL
+            fileId: response.fileId          // 🔑 needed for deletion/edit
+        });
+        // const imageUrl = `http://localhost:3000/uploads/${req.file.filename}`;
+
+        res.status(201).json({optimizedImageURL})
         
     }catch(error){
         next(error);
     }
 }
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+// const __filename = fileURLToPath(import.meta.url)
+// const __dirname = path.dirname(__filename)
 
-const rootDir = path.join(__dirname, "..", )
+// const rootDir = path.join(__dirname, "..", )
 
 export const deleteImage = async(req, res, next) => {
-    const {imageUrl} = req.query
+    const {fileId} = req.query
 
-    if(!imageUrl){
+    if(!fileId){
         return next(errorHandler(400, "imageUrl parameter is required!"))
     }
     try{
-        // Extract the filename from the image url
-        const filename = path.basename(imageUrl)
+        await imagekit.deleteFile(fileId);
 
-        // Delete the file path 
-        const filePath = path.join(rootDir, "uploads", filename);
-        console.log(filePath);
-        // check if the file exist
-        if(!fs.existsSync(filePath)){
-            return next(errorHandler(404, "image not found"))
-        }
-
-        // delete the file
-        await fs.promises.unlink(filePath);
-        res.status(200).json(message, "Image deleted successfully");
+        res.status(200).json({ message: "Image deleted successfully" });
 
     }catch(error){
         next(error);
@@ -124,8 +172,20 @@ export const editTravelStory = async(req,res,next) => {
         travelStory.title = title;
         travelStory.story = story;
         travelStory.visitedLocation=visitedLocation;
-        travelStory.imageUrl=imageUrl || placeholderImageUrl;
+        // travelStory.imageUrl=imageUrl || placeholderImageUrl;
         travelStory.visitedDate=parsedVisitedDate;
+
+        // Handle image update
+        if (imageUrl && fileId) {
+        // If there was an old image, delete it
+        if (travelStory.fileId) {
+            await imagekit.deleteFile(travelStory.fileId);
+        }
+
+        // Save new image info
+        travelStory.imageUrl = imageUrl;
+        travelStory.fileId = fileId;
+        }
 
         await travelStory.save()
 
@@ -150,30 +210,25 @@ export const deleteTravelStory = async(req,res,next) => {
         if(!travelStory){
             next(errorHandler(404, "Travel Story not found!"))
         }
-        // delete travel story from the database
-        await travelStory.deleteOne({_id: id, userId: userId})
+        // ✅ Extract fileId from DB (you should save fileId in your TravelStory schema)
+        const fileId = travelStory.imageFileId; // <-- you need to save this at create time
 
-
-        // Extract the filename from the image url
-        const imageUrl = travelStory.imageUrl;
-        const filename = path.basename(imageUrl);
-
-        // delete the file path
-        const filePath = path.join(rootDir, "uploads", filename);
-
-        // check if the file exist
-        if(!fs.existsSync(filePath)){
-            return next(errorHandler(404, "image not found"))
+        if (fileId) {
+        try {
+            await imagekit.deleteFile(fileId); // Delete image from ImageKit
+        } catch (err) {
+            console.error("Error deleting image from ImageKit:", err);
+        }
         }
 
-        // delete the file
-        await fs.promises.unlink(filePath);
+        // ✅ Delete story from DB
+        await travelStory.deleteOne();
 
         res.status(200).json({
             story: travelStory,
-            Message: "Travel Story deleted successfully",
-        })
-    }catch(error){
+            message: "Travel Story deleted successfully",
+        });
+    } catch (error) {
         next(error);
     }
 }
