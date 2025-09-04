@@ -1,49 +1,18 @@
-import multer from "multer";
+// multer.js
+import multer from "multer"
 
-// use memory storage instead of disk
-const storage = multer.memoryStorage();
+// store file in memory (not on disk)
+const storage = multer.memoryStorage()
 
-// file filter for images
+// file filter to accept only images
 const fileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith("image/")) {
-    cb(null, true);
+    cb(null, true)
   } else {
-    cb(new Error("Only images are allowed"), false);
+    cb(new Error("Only images are allowed"), false)
   }
-};
+}
 
-// multer instance
-const upload = multer({ storage, fileFilter });
+const upload = multer({ storage, fileFilter })
 
-export default upload;
-
-
-
-// import multer from "multer";
-// import path from "path";
-
-// // storage configuration
-// const storage = multer.diskStorage({
-//     destination: function(req, file, cb){
-//         cb(null, "./uploads/")
-//     },
-
-//     filename: function(req, file, cb){
-//         // unique file name
-//         cb(null, Date.now() + path.extname(file.originalname))
-//     }
-// })
-
-// // file filter to accept only images
-// const fileFilter = (req, file, cb) =>{
-//     if(file.mimetype.startsWith("image/")){
-//         cb(null, true);
-//     }else{
-//         cb(new Error("Only images are allowed"), false);
-//     }
-// }
-
-// // initialize multer instance
-// const upload = multer({storage, fileFilter})
-
-// export default upload;
+export default upload
